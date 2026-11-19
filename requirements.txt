@@ -1,0 +1,7 @@
+faster-whisper
+sounddevice
+numpy
+anthropic
+pywebview
+mlx-whisper; platform_machine == 'arm64' and sys_platform == 'darwin'
+parakeet-mlx; platform_machine == 'arm64' and sys_platform == 'darwin'
