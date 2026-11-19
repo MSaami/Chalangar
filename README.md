@@ -98,7 +98,10 @@ so **BlackHole** acts as a cable: the Mac plays sound *into* BlackHole and the a
 1. In the window: **Mode → Game**, **Input → BlackHole 2ch**, **Sound out → BlackHole 2ch**.
    (Without switchaudio-osx: set *System Settings → Sound → Output* to BlackHole 2ch yourself.)
 2. Now the sound goes into BlackHole, so you hear nothing yet. Click **🎧** to play it back
-   to your headphones or speakers. Choose the device in **🎧 to** and set the volume with the slider.
+   to your headphones or speakers. Choose the device in **🎧 to**.
+3. Volume works like normal: the **Mac's volume keys** and the slider set the real volume of
+   your headphones (100 = full). Turning it down never makes the translation worse.
+   (Devices without their own volume, like HDMI monitors, still follow the keys.)
 
 *Alternative:* if your game sound comes from a console through a USB sound card / capture card,
 just choose that device as **Input**; you don't need BlackHole.
@@ -168,6 +171,7 @@ When you open the `.app`, the log goes to `logs/app.log` instead.
 | "API error: 401" | The key is wrong or expired. Paste a new one. |
 | No translations appear | Check that **Input** is BlackHole 2ch and **Sound out** is BlackHole (game) or the Multi-Output Device (meeting). |
 | I hear nothing in game mode | Turn on **🎧** and pick your headphones in **🎧 to**. |
+| 🎧 is too quiet | Turn it up with the Mac's volume keys or the 🎧 slider (it's your headphones' real volume). |
 | I hear the sound twice | Sound out is the Multi-Output Device while 🎧 is on. In game mode use BlackHole 2ch. |
 | BlackHole isn't in the device list | Restart the Mac after installing BlackHole. |
 | "Input too loud (distorted)" | Lower the game / Mac volume a bit. |

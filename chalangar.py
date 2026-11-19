@@ -46,7 +46,6 @@ import sounddevice as sd
 SR = 16000                   # Whisper and VAD want 16 kHz mono
 BLOCK_SEC = 0.03             # audio block size (small = less delay when listening)
 VAD_EVERY_SEC = 0.2          # how often we look for the end of a sentence
-MONITOR_MAX_SEC = 0.25       # max audio waiting for the headphones (keeps delay low)
 
 # Common Whisper "hallucinations" on music / silence
 # Choices in the window's Model menu, in this order: key -> (label, OpenRouter id, Anthropic id).
@@ -249,6 +248,10 @@ async function poll() {
     const r = await fetch('/state?rev=' + rev);
     const data = await r.json();
     if (data.entries) { rev = data.rev; render(data.entries); window._last = data.entries; }
+    if (data.volume !== undefined && document.activeElement !== volSl
+        && Number(volSl.value) !== data.volume) {      // the Mac's volume keys moved it
+      volSl.value = data.volume; document.getElementById('volVal').textContent = data.volume;
+    }
     const st = document.getElementById('status');
     st.textContent = data.status; st.title = data.status;
     st.className = data.state === 'error' ? 'err' : '';
@@ -460,6 +463,85 @@ def set_mac_output(name):
     return None
 
 
+class MacVolume:
+    """Read and set a device's output volume, like the macOS volume slider (CoreAudio)."""
+    BH_RANGE_DB = 64.0     # BlackHole's volume goes linearly in dB from -64 dB (0) to 0 dB (1)
+
+    def __init__(self):
+        import ctypes, ctypes.util, struct
+        self._c = c = ctypes
+        self._ca = c.cdll.LoadLibrary(ctypes.util.find_library("CoreAudio"))
+        self._cf = c.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+        self._cf.CFStringGetCString.argtypes = [c.c_void_p, c.c_char_p, c.c_long, c.c_uint32]
+        self._cf.CFRelease.argtypes = [c.c_void_p]
+        four = lambda t: struct.unpack(">I", t.encode())[0]
+        self.GLOB, self.OUT = four("glob"), four("outp")
+        self.VOL, self.MUTE, self.DEVS, self.NAME, self.STREAMS = (
+            four(t) for t in ("volm", "mute", "dev#", "lnam", "stm#"))
+
+        class Addr(c.Structure):
+            _fields_ = [("sel", c.c_uint32), ("scope", c.c_uint32), ("elem", c.c_uint32)]
+        self._Addr = Addr
+
+    def _get(self, obj, sel, scope, elem, ctype):
+        c = self._c
+        a, size = self._Addr(sel, scope, elem), c.c_uint32(0)
+        if self._ca.AudioObjectGetPropertyDataSize(obj, c.byref(a), 0, None, c.byref(size)):
+            return None
+        if size.value == 0:
+            return []
+        buf = (ctype * (size.value // c.sizeof(ctype)))()
+        if self._ca.AudioObjectGetPropertyData(obj, c.byref(a), 0, None, c.byref(size), buf):
+            return None
+        return list(buf)
+
+    def _set(self, obj, sel, scope, elem, value):
+        c = self._c
+        a = self._Addr(sel, scope, elem)
+        return self._ca.AudioObjectSetPropertyData(obj, c.byref(a), 0, None,
+                                                   c.sizeof(value), c.byref(value)) == 0
+
+    def device(self, name):
+        """CoreAudio id of the OUTPUT device with this name (as sounddevice shows it), or None.
+        Bluetooth headsets show up twice with the same name: a mic and an output."""
+        c = self._c
+        for d in self._get(1, self.DEVS, self.GLOB, 0, c.c_uint32) or []:
+            if not self._get(d, self.STREAMS, self.OUT, 0, c.c_uint32):
+                continue                      # input only
+            ref = self._get(d, self.NAME, self.GLOB, 0, c.c_void_p)
+            if not ref or not ref[0]:
+                continue
+            buf = c.create_string_buffer(256)
+            self._cf.CFStringGetCString(ref[0], buf, 256, 0x08000100)   # UTF-8
+            self._cf.CFRelease(ref[0])
+            if buf.value.decode("utf-8", "ignore") == name:
+                return d
+        return None
+
+    def _elements(self, dev):
+        # one master volume, or one per channel (e.g. Bluetooth headphones)
+        if self._get(dev, self.VOL, self.OUT, 0, self._c.c_float) is not None:
+            return [0]
+        return [e for e in (1, 2) if self._get(dev, self.VOL, self.OUT, e, self._c.c_float)]
+
+    def get(self, dev):
+        """Volume 0-1, or None when the device has no volume control."""
+        vals = [self._get(dev, self.VOL, self.OUT, e, self._c.c_float)[0]
+                for e in self._elements(dev)]
+        return sum(vals) / len(vals) if vals else None
+
+    def set(self, dev, v):
+        v = self._c.c_float(max(0.0, min(1.0, v)))
+        return any([self._set(dev, self.VOL, self.OUT, e, v) for e in self._elements(dev)])
+
+    def muted(self, dev):
+        m = self._get(dev, self.MUTE, self.OUT, 0, self._c.c_uint32)
+        return bool(m and m[0])
+
+    def set_mute(self, dev, on):
+        return self._set(dev, self.MUTE, self.OUT, 0, self._c.c_uint32(1 if on else 0))
+
+
 def resample(audio: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
     if src_rate == dst_rate:
         return audio.astype(np.float32)
@@ -576,8 +658,10 @@ class MonitorBuffer:
     resample continuously and nudge the speed by a fraction of a percent to keep
     a steady amount of audio buffered."""
 
-    TARGET_SEC = 0.08        # audio kept in the buffer (adds this much delay)
-    MAX_SEC = 0.6            # far too much buffered (e.g. after a pause): jump back
+    TARGET_SEC = 0.05        # audio kept in the buffer (adds this much delay)
+    # more than this buffered (after a hiccup or at the start): jump back to TARGET at once
+    # instead of slowly catching up, which used to leave the sound up to 0.6 s late
+    MAX_SEC = 0.15
 
     def __init__(self, src_rate, out_rate):
         self.src_rate, self.out_rate = src_rate, out_rate
@@ -589,6 +673,11 @@ class MonitorBuffer:
         self.lock = threading.Lock()
         self.last = np.zeros(2, dtype=np.float32)
         self.underruns = 0
+
+    def clear(self):
+        with self.lock:
+            self.fifo = np.zeros((0, 2), dtype=np.float32)
+            self.pos, self.adj, self.primed = 0.0, 0.0, False
 
     def push(self, stereo):
         with self.lock:
@@ -606,6 +695,8 @@ class MonitorBuffer:
                 if len(fifo) < self.target:
                     return out
                 self.primed = True
+                fifo = fifo[-self.target:]            # start with exactly TARGET of delay
+                self.pos = 0.0
             # gentle speed correction towards the target fill level
             err = (len(fifo) - self.target) / self.target
             want = max(-0.004, min(0.004, err * 0.004))
@@ -636,10 +727,11 @@ class MonitorBuffer:
 
 
 
-def monitor_process(in_name, out_name, volume, stop, stats, parent_pid):
+def monitor_process(in_name, out_name, enabled, gain, stop, stats, parent_pid):
     """Runs in its OWN process: plays the input device on the headphones.
     In a separate process the speech model can never make the sound stutter
-    (Python runs only one thread at a time inside one process)."""
+    (Python runs only one thread at a time inside one process).
+    It keeps running in game mode; 🎧 only flips `enabled`, so on/off is instant."""
     def find(name, kind):
         for i, d in enumerate(sd.query_devices()):
             if d["name"] == name and d[kind] > 0:
@@ -652,20 +744,30 @@ def monitor_process(in_name, out_name, volume, stop, stats, parent_pid):
         return
     buf = MonitorBuffer(int(din["default_samplerate"]), int(dout["default_samplerate"]))
 
+    was_on = [False]
+
     def on_input(indata, frames, t, status):
+        if not enabled.value:
+            return
         left = indata[:, 0]
         right = indata[:, 1] if indata.shape[1] > 1 else left
         buf.push(np.stack([left, right], axis=1).astype(np.float32))
 
     def on_output(outdata, frames, t, status):
+        if not enabled.value:
+            if was_on[0]:
+                buf.clear()             # next time 🎧 starts with fresh sound, not old audio
+                was_on[0] = False
+            outdata.fill(0)
+            return
+        was_on[0] = True
         if status.output_underflow:
             stats[1] += 1
-        chunk = buf.pull(frames)
-        gain = (volume.value / 100.0) ** 2
+        chunk = buf.pull(frames) * gain.value
         if outdata.shape[1] == 1:
-            outdata[:, 0] = chunk.mean(axis=1) * gain
+            outdata[:, 0] = chunk.mean(axis=1)
         else:
-            outdata[:, :2] = chunk * gain
+            outdata[:, :2] = chunk
 
     with sd.InputStream(device=in_idx, channels=min(2, din["max_input_channels"]),
                         samplerate=int(din["default_samplerate"]), dtype="float32",
@@ -673,7 +775,7 @@ def monitor_process(in_name, out_name, volume, stop, stats, parent_pid):
          sd.OutputStream(device=out_idx, channels=min(2, dout["max_output_channels"]),
                          samplerate=int(dout["default_samplerate"]), dtype="float32",
                          latency="low", callback=on_output):
-        while not stop.wait(0.5):
+        while not stop.wait(0.1):
             stats[0] = buf.underruns
             if os.getppid() != parent_pid:      # the app was closed: stop playing
                 break
@@ -743,10 +845,24 @@ class Translator:
             self.custom_model = args.model
 
         # Headphone playback ("monitor"), game mode only
-        self.out_stream = None
         self.out_rate = None
         self.out_name = ""
-        self.mon_proc = None               # the 🎧 playback process
+        self.mon_proc = None               # the 🎧 playback process (runs in game mode)
+        self.mon_enabled = self.mon_gain = None
+        # 🎧 volume = the headphones' real macOS volume, and the volume keys work.
+        # In game mode the Mac plays into BlackHole, so the keys change BlackHole's volume;
+        # we copy that to the headphones and undo BlackHole's quieter sound for the
+        # speech recognizer and 🎧 (bh_gain), so translation never gets quieter.
+        try:
+            self.macvol = MacVolume() if platform.system() == "Darwin" else None
+        except Exception as e:
+            print(f"[volume] CoreAudio not available: {e}", flush=True)
+            self.macvol = None
+        self.bh_dev = None                 # BlackHole's CoreAudio id
+        self.hp_dev = None                 # the 🎧 device's id, if it has a volume control
+        self.bh_gain = 1.0                 # undoes BlackHole's volume (1 = BlackHole at 100 %)
+        self._bh_seen = None               # BlackHole volume at the last check
+        self._bh_touched = False           # we changed BlackHole's volume (reset it on exit)
 
     # ---------- settings ----------
     def load_settings(self):
@@ -778,16 +894,91 @@ class Translator:
         """Change where 🎧 plays and how loud, without restarting the audio input."""
         if volume is not None:
             self.volume = max(0, min(100, int(float(volume))))
-            if getattr(self, "mon_volume", None) is not None:
-                self.mon_volume.value = float(self.volume)
+            self.apply_volume(self.volume / 100)
         restart = listen_on is not None and listen_on != self.listen_on
         if restart:
             self.listen_on = listen_on
         self.save_settings()
-        if restart and self.monitor and self.mode == "game" and self.sources:
+        if restart and self.mode == "game" and self.sources:
             self.stop_monitor()
             self.start_monitor()
             self.refresh_listening_status()
+
+    # ---------- 🎧 volume ----------
+    def _game_from_blackhole(self):
+        return (self.mode == "game" and bool(self.sources)
+                and "blackhole" in self.sources[0].name.lower())
+
+    def apply_volume(self, v):
+        """The 🎧 slider: set the level like the Mac's volume keys do."""
+        mv = self.macvol
+        if mv and self._game_from_blackhole() and self.bh_dev:
+            self._bh_touched = True
+            mv.set(self.bh_dev, v)        # volume_sync copies it to the headphones
+        elif mv and self.hp_dev:
+            mv.set(self.hp_dev, v)
+        self.update_monitor_gain()
+
+    def update_monitor_gain(self):
+        if self.mon_gain is None:
+            return
+        if self.macvol is None:
+            g = (self.volume / 100) ** 2                  # no CoreAudio: plain software volume
+        elif self._game_from_blackhole():
+            # with a volume control on the headphones they set the level; without one
+            # (e.g. HDMI), BlackHole's own volume is the level
+            g = self.bh_gain if self.hp_dev else 1.0
+        else:
+            g = 1.0 if self.hp_dev else (self.volume / 100) ** 2
+        self.mon_gain.value = g
+
+    def sync_volume_on_enable(self):
+        """When 🎧 turns on, start the volume keys from the level you hear now."""
+        mv = self.macvol
+        if not (mv and self._game_from_blackhole() and self.bh_dev):
+            return
+        v = mv.get(self.hp_dev) if self.hp_dev else self.volume / 100
+        if v is None:
+            return
+        self._bh_seen = v                # not a key press: don't copy it back
+        self._bh_touched = True
+        mv.set(self.bh_dev, v)
+        mv.set_mute(self.bh_dev, False)
+        self.volume = round(v * 100)
+
+    def volume_sync(self):
+        """Runs all the time: follows BlackHole's volume (the Mac's volume keys in game mode)."""
+        mv, n = self.macvol, 0
+        while True:
+            time.sleep(0.1)
+            try:
+                if n % 20 == 0:                       # devices can come and go
+                    self.bh_dev = mv.device("BlackHole 2ch")
+                n += 1
+                v = mv.get(self.bh_dev) if self.bh_dev else None
+                if v is None:
+                    self.bh_gain = 1.0
+                    continue
+                self.bh_gain = 10 ** (MacVolume.BH_RANGE_DB * (1.0 - v) / 20)
+                playing = (self.monitor and self.mon_proc is not None
+                           and self._game_from_blackhole())
+                if mv.muted(self.bh_dev):
+                    # the mute key: a muted BlackHole would silence the translator too,
+                    # so un-mute it and mute / un-mute the headphones instead
+                    mv.set_mute(self.bh_dev, False)
+                    if playing and self.hp_dev:
+                        mv.set_mute(self.hp_dev, not mv.muted(self.hp_dev))
+                if self._bh_seen is None or abs(v - self._bh_seen) > 0.001:
+                    self._bh_seen = v
+                    if playing:
+                        self.volume = round(v * 100)
+                        if self.hp_dev:
+                            mv.set(self.hp_dev, v)
+                            mv.set_mute(self.hp_dev, False)
+                self.update_monitor_gain()
+            except Exception as e:
+                print(f"[volume] {e}", flush=True)
+                time.sleep(2)
 
     def set_provider(self, provider=None, keys=None):
         """Switch provider and/or save keys from the window, then rebuild the API client."""
@@ -870,7 +1061,7 @@ class Translator:
             self.set_status(f"⚠️ {self.output_error}", "error")
             return
         text = self.listening_status
-        if self.monitor and self.out_stream is not None:
+        if self.monitor and self.mon_proc is not None:
             text += f" · 🎧 {self.out_name}"
             try:
                 mac_out = sd.query_devices(sd.default.device[1])["name"].lower()
@@ -884,6 +1075,8 @@ class Translator:
     def start_backend(self):
         try:
             self.setup_client()      # a missing key is reported, the speech model still loads
+            if self.macvol:
+                threading.Thread(target=self.volume_sync, daemon=True).start()
             if self.client_error:
                 self.set_status(self.client_error, "error")
 
@@ -975,8 +1168,7 @@ class Translator:
                             and "blackhole" not in out_name.lower()):
                         self.listening_status += (" · ⚠️ headphone mic: sound will be phone "
                                                   "quality. Choose another Input")
-                    if self.monitor:
-                        self.start_monitor()
+                    self.start_monitor()          # ready for 🎧, plays only when it is on
                 else:
                     self.listening_status = (f"Meeting · You: {sources[0].name} · "
                                              f"Others: {sources[1].name} · {label}")
@@ -990,10 +1182,13 @@ class Translator:
         self.save_settings()
         if self.mode != "game" or not self.sources:     # applied when game audio starts
             return on
-        if on:
+        if self.mon_proc is None or not self.mon_proc.is_alive():
             self.start_monitor()
-        else:
-            self.stop_monitor()
+        if on:
+            self.sync_volume_on_enable()
+            self.update_monitor_gain()
+        if self.mon_enabled is not None:
+            self.mon_enabled.value = on                  # instant: the process is already running
         self.refresh_listening_status()
         return self.monitor
 
@@ -1027,21 +1222,30 @@ class Translator:
                 self.set_status("🎧: no headphones or speakers found", "error")
                 return
             ctx = mp.get_context("spawn")
-            self.mon_volume = ctx.Value("d", float(self.volume))
+            self.out_name = d["name"]
+            self.hp_dev = None
+            if self.macvol:
+                dev = self.macvol.device(d["name"])
+                if dev is not None and self.macvol.get(dev) is not None:
+                    self.hp_dev = dev                # has a real volume control
+            self.mon_enabled = ctx.Value("b", False)
+            self.mon_gain = ctx.Value("d", 1.0)
             self.mon_stop = ctx.Event()
             self.mon_stats = ctx.Array("i", [0, 0])
+            if self.monitor:
+                self.sync_volume_on_enable()
+            self.update_monitor_gain()
+            self.mon_enabled.value = self.monitor
             self.mon_proc = ctx.Process(
                 target=monitor_process, daemon=True,
-                args=(src.name, d["name"], self.mon_volume, self.mon_stop, self.mon_stats,
-                      os.getpid()))
+                args=(src.name, d["name"], self.mon_enabled, self.mon_gain, self.mon_stop,
+                      self.mon_stats, os.getpid()))
             self.mon_proc.start()
-            self.out_stream = self.mon_proc          # "playing" marker for the status line
-            self.out_name = d["name"]
             print(f"[monitor] {src.name} → {d['name']} (own process {self.mon_proc.pid})",
                   flush=True)
         except Exception as e:
             self.monitor = False
-            self.out_stream = None
+            self.mon_proc = None
             self.set_status(f"Headphones error: {e}", "error")
 
     def stop_monitor(self):
@@ -1057,12 +1261,19 @@ class Translator:
             except Exception:
                 pass
         self.mon_proc = None
-        self.out_stream = None
+        self.mon_enabled = self.mon_gain = None
+        if self._bh_touched and self.macvol and self.bh_dev:
+            # leave BlackHole at 100 % for other apps (the level is on the headphones)
+            self.macvol.set(self.bh_dev, 1.0)
+            self._bh_touched = False
+            self._bh_seen = None
 
     # ---------- audio capture ----------
     def audio_callback(self, src, indata):
         mono = indata.mean(axis=1) if indata.ndim > 1 else indata[:, 0]
         mono = mono.copy()
+        if self.bh_gain != 1.0 and "blackhole" in src.name.lower():
+            mono *= self.bh_gain            # undo BlackHole's volume (the Mac's volume keys)
         src.audio_q.put(mono)
 
     # ---------- find sentences with a speech detector (works with music behind) ----------
@@ -1302,7 +1513,7 @@ def make_handler(translator):
                 q = dict(p.split("=", 1) for p in url.query.split("&") if "=" in p)
                 with translator.lock:
                     data = {"status": translator.status, "state": translator.state,
-                            "rev": translator.rev}
+                            "rev": translator.rev, "volume": translator.volume}
                     if q.get("rev") != str(translator.rev):
                         data["entries"] = [dict(e) for e in translator.entries]
                 self._send(json.dumps(data, ensure_ascii=False).encode("utf-8"),
