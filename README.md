@@ -39,8 +39,8 @@ Mac audio ──► BlackHole ──► speech detection ──► Parakeet / Wh
 ## Quick start
 
 ```bash
-git clone https://github.com/MSaami/chalangar.git
-cd chalangar
+git clone https://github.com/MSaami/Chalangar.git
+cd Chalangar
 ./setup.sh
 open Chalangar.app
 ```
