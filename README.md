@@ -34,7 +34,7 @@ Mac audio ──► BlackHole ──► speech detection ──► Parakeet / Wh
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-username>/game_translator.git
+git clone https://github.com/MSaami/game_translator.git
 cd game_translator
 ./setup.sh
 open "Game Translator.app"
