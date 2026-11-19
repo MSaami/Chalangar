@@ -16,7 +16,7 @@ Anthropic API) for a natural Persian translation, plus short notes on idioms and
 
 | Mode | What it does |
 |---|---|
-| 🎮 **Game** | Translates what you hear in a game or video. Each line also shows useful phrases (📝) and is saved to `game_log_<date>.md` so you can review it later. |
+| 🎮 **Game** | Translates what you hear in a game or video. Each line also shows useful phrases (📝) and is saved to `logs/game_log_<date>.md` so you can review it later. |
 | 💼 **Meeting** | Translates what **others** say, and gives feedback on **your own** English: ✅ when it was good, or ✏️ a more natural version with a 💡 short explanation in Persian. Nothing from meetings is saved to disk. |
 
 ```
@@ -149,15 +149,15 @@ All settings are saved in `settings.json` and remembered for next time.
 ./run.sh --help                # all options
 ```
 
-When you open the `.app`, the log goes to `app.log` instead.
+When you open the `.app`, the log goes to `logs/app.log` instead.
 
 ## Privacy
 
 - Speech recognition runs **locally**. Audio never leaves your Mac.
 - Only the recognized **text** (plus the last few lines as context) is sent to the AI provider you chose.
-- Game mode saves lines to `game_log_<date>.md` for your own review. Meeting mode saves nothing,
-  and meeting lines are not written to `app.log` either.
-- `settings.json` (your API keys), `app.log` and `game_log_*.md` are in `.gitignore`.
+- Game mode saves lines to `logs/game_log_<date>.md` for your own review. Meeting mode saves nothing,
+  and meeting lines are not written to `logs/app.log` either.
+- `settings.json` (your API keys) and the `logs/` folder are in `.gitignore`.
 
 ## Troubleshooting
 
@@ -172,7 +172,7 @@ When you open the `.app`, the log goes to `app.log` instead.
 | BlackHole isn't in the device list | Restart the Mac after installing BlackHole. |
 | "Input too loud (distorted)" | Lower the game / Mac volume a bit. |
 | Slow or wrong words | Try a longer **Pause**, or `--engine mlx` (Whisper) instead of Parakeet. |
-| More detail | Run `./run.sh` and read the log, or open `app.log`. |
+| More detail | Run `./run.sh` and read the log, or open `logs/app.log`. |
 
 ## License
 

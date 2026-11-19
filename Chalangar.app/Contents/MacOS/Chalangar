@@ -8,6 +8,7 @@ if [[ ! -f "$DIR/chalangar.py" || ! -x "$PY" ]]; then
   osascript -e 'display alert "Chalangar is not set up yet" message "Open Terminal in the Chalangar folder and run:  ./setup.sh" as warning' >/dev/null
   exit 1
 fi
-LOG="$DIR/app.log"
+mkdir -p "$DIR/logs"
+LOG="$DIR/logs/app.log"
 echo "---- $(date) ----" >> "$LOG"
 exec "$PY" chalangar.py "$@" >> "$LOG" 2>&1

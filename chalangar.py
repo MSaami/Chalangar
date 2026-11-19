@@ -710,7 +710,7 @@ class Translator:
         self.thinking_required = set()   # models that refuse thinking={"type": "disabled"}
         self.pool = ThreadPoolExecutor(max_workers=3)
         here = Path(__file__).resolve().parent
-        self.log_path = here / f"game_log_{datetime.date.today()}.md"
+        self.log_path = here / "logs" / f"game_log_{datetime.date.today()}.md"
         self.settings_path = here / "settings.json"
 
         saved = self.load_settings()
@@ -1167,7 +1167,7 @@ class Translator:
                 next_id += 1
                 self.entries.append(entry)
                 self.rev += 1
-            # meeting lines are private: show them in a terminal, but keep them out of app.log
+            # meeting lines are private: show them in a terminal, but keep them out of logs/app.log
             if self.mode != "meeting" or sys.stdout.isatty():
                 print(f"{who or 'EN'}: {text}", flush=True)
             if speaker != "you":
@@ -1245,6 +1245,7 @@ class Translator:
 
         if self.mode == "meeting":
             return          # meetings are not saved to a file (privacy)
+        self.log_path.parent.mkdir(exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(f"- **{fix or entry['en']}**\n  - {fa}\n")
             for n in notes:

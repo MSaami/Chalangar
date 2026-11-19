@@ -2,8 +2,8 @@
 settings.json
 .env
 .env.*
+logs/
 *.log
-app.log
 game_log_*.md
 
 # ---------- Python ----------
