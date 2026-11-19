@@ -1,5 +1,5 @@
 #!/bin/zsh
-# One-time setup for Game Translator (macOS).
+# One-time setup for Chalangar (macOS).
 #   ./setup.sh        ask before installing the audio tools
 #   ./setup.sh -y     install everything without asking
 set -e
@@ -14,7 +14,7 @@ warn() { print -P "  %F{yellow}!%f $1"; }
 fail() { print -P "  %F{red}✗%f $1"; exit 1; }
 ask()  { (( YES )) && return 0; read -q "?  $1 [y/N] " && { echo; return 0; } || { echo; return 1; } }
 
-[[ "$(uname)" == "Darwin" ]] || fail "Game Translator runs on macOS only."
+[[ "$(uname)" == "Darwin" ]] || fail "Chalangar runs on macOS only."
 
 # ---------- 1. Python ----------
 bold "1/4 Python"
@@ -71,14 +71,14 @@ ok "packages installed in .venv"
 
 # ---------- 4. App ----------
 bold "4/4 App"
-chmod +x run.sh "Game Translator.app/Contents/MacOS/GameTranslator"
+chmod +x run.sh "Chalangar.app/Contents/MacOS/Chalangar"
 # a downloaded zip marks the app as "from the internet"; this folder is yours, so clear it
-xattr -dr com.apple.quarantine "Game Translator.app" 2>/dev/null || true
-ok "Game Translator.app is ready"
+xattr -dr com.apple.quarantine "Chalangar.app" 2>/dev/null || true
+ok "Chalangar.app is ready"
 
 echo
 bold "Done! Start it with:"
-echo "  open \"Game Translator.app\"     (or double-click it, or drag it to the Dock)"
+echo "  open Chalangar.app             (or double-click it, or drag it to the Dock)"
 echo "  ./run.sh                       (from the terminal, shows the log)"
 echo
 echo "Then click 🔑 Keys in the window and paste your OpenRouter or Anthropic API key."

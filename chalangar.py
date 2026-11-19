@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Game Translator — live English → Persian subtitles for games and videos (macOS).
+Chalangar — live English → Persian subtitles for games and videos (macOS).
 
 Flow:  audio input (USB sound card or BlackHole) → speech detection (Silero VAD)
        → Parakeet or Whisper (local) → Claude API → small app window
@@ -9,9 +9,9 @@ Setup: ./setup.sh   (see README.md)
 
 Usage:
     ./run.sh                                     # same as below, using the .venv
-    python game_translator.py                    # open the app window and start
-    python game_translator.py --list-devices     # show audio devices
-    python game_translator.py --browser          # show in the browser instead
+    python chalangar.py                    # open the app window and start
+    python chalangar.py --list-devices     # show audio devices
+    python chalangar.py --browser          # show in the browser instead
 
 The input device is the Mac's current input (System Settings → Sound → Input).
 AI provider: choose OpenRouter or Anthropic in the window (Provider menu) and paste the keys
@@ -126,7 +126,7 @@ Rules:
 VIEWER_HTML = """<!doctype html>
 <html lang="fa"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Game Translator</title>
+<title>Chalangar</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600&display=swap">
 <style>
   :root { --bg:#111418; --card:#1b2027; --en:#7dd3fc; --fa:#f3f4f6; --note:#fcd34d;
@@ -830,7 +830,7 @@ class Translator:
             # OpenRouter wants "Authorization: Bearer"; an explicit credential also stops the SDK
             # from picking up ANTHROPIC_* env keys, so the Anthropic key is never sent there
             self.client = anthropic.Anthropic(base_url=OPENROUTER_BASE_URL, auth_token=key,
-                                              default_headers={"X-Title": "Game Translator"})
+                                              default_headers={"X-Title": "Chalangar"})
         else:
             self.client = anthropic.Anthropic(api_key=key)
         self.client_error = None
@@ -1363,7 +1363,7 @@ class WindowApi:
 
 
 def main():
-    p = argparse.ArgumentParser(description="Live English → Persian game translator")
+    p = argparse.ArgumentParser(description="Chalangar: live English → Persian translator")
     p.add_argument("--device", default="",
                    help="input device name (part of it); default: the Mac's current input")
     p.add_argument("--engine", default="auto", choices=["auto", "parakeet", "mlx", "faster"],
@@ -1413,13 +1413,13 @@ def main():
         api = WindowApi(t)
         api._on_top = args.on_top
         api._window = webview.create_window(
-            "Game Translator", url, js_api=api,
+            "Chalangar", url, js_api=api,
             width=460, height=680, min_size=(320, 300),
             on_top=args.on_top, background_color="#111418")
         try:   # show our icon in the Dock instead of the Python icon
             from AppKit import NSApplication, NSImage
             icon = (Path(__file__).resolve().parent /
-                    "Game Translator.app/Contents/Resources/AppIcon.icns")
+                    "Chalangar.app/Contents/Resources/AppIcon.icns")
             if icon.exists():
                 NSApplication.sharedApplication().setApplicationIconImage_(
                     NSImage.alloc().initWithContentsOfFile_(str(icon)))

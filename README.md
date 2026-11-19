@@ -1,4 +1,9 @@
-# Game Translator
+<p align="center"><img src="assets/icon.png" width="128" alt="Chalangar icon"></p>
+
+# Chalangar
+
+> Named after Chalangar, an interpreter who translates for coaches, because that's
+> what this app does for you: it stands next to you and translates, live.
 
 Live **English → Persian** subtitles for games, videos and meetings on macOS, built to help you
 improve your English while you play or work.
@@ -34,10 +39,10 @@ Mac audio ──► BlackHole ──► speech detection ──► Parakeet / Wh
 ## Quick start
 
 ```bash
-git clone https://github.com/MSaami/game_translator.git
-cd game_translator
+git clone https://github.com/MSaami/chalangar.git
+cd chalangar
 ./setup.sh
-open "Game Translator.app"
+open Chalangar.app
 ```
 
 `setup.sh` does everything once:
@@ -46,11 +51,11 @@ open "Game Translator.app"
 2. offers to install **BlackHole 2ch** (virtual audio cable) and **switchaudio-osx**
    (lets the app change the Mac's sound output for you),
 3. creates `.venv` and installs the Python packages,
-4. gets `Game Translator.app` ready to open.
+4. gets `Chalangar.app` ready to open.
 
 Use `./setup.sh -y` to say yes to everything. Then:
 
-1. Open the app (double-click **Game Translator.app**, or drag it to the Dock).
+1. Open the app (double-click **Chalangar.app**, or drag it to the Dock).
 2. Click **🔑 Keys**, paste your API key, and click **Save**.
 3. Choose the **Provider** you have a key for.
 4. Set up the audio (below) and play something.
@@ -80,7 +85,7 @@ Where keys are looked up, in this order:
 
 `settings.json` is in `.gitignore`, so your keys are never committed.
 
-**Adding a model:** add one line to `MODEL_CHOICES` at the top of `game_translator.py`:
+**Adding a model:** add one line to `MODEL_CHOICES` at the top of `chalangar.py`:
 `key: (label, OpenRouter model id, Anthropic model id or None)`.
 
 ## Audio setup

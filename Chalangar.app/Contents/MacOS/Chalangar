@@ -1,0 +1,13 @@
+#!/bin/zsh
+# Opens Chalangar. Uses the folder that contains this app.
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$DIR" || exit 1
+export PATH="$HOME/.pyenv/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+PY="$DIR/.venv/bin/python"
+if [[ ! -f "$DIR/chalangar.py" || ! -x "$PY" ]]; then
+  osascript -e 'display alert "Chalangar is not set up yet" message "Open Terminal in the Chalangar folder and run:  ./setup.sh" as warning' >/dev/null
+  exit 1
+fi
+LOG="$DIR/app.log"
+echo "---- $(date) ----" >> "$LOG"
+exec "$PY" chalangar.py "$@" >> "$LOG" 2>&1
